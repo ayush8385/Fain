@@ -54,8 +54,15 @@ authRouter.get("/auth/google/callback", async (req, res) => {
 
     // Redirect back into the app via the registered fain:// URL scheme.
     // The app's Linking handler picks this up and saves the session.
+    // Try deep link first; show token on screen as fallback for browser-based testing.
     const deepLink = `fain://auth?token=${encodeURIComponent(sessionToken)}&email=${encodeURIComponent(user.email)}`;
-    res.redirect(deepLink);
+    res.send(`<!DOCTYPE html><html><body style="font-family:monospace;padding:32px;background:#0f172a;color:#f8fafc">
+<h2>Logged in as ${user.email}</h2>
+<p>Copy this token and paste it into the app's dev token field:</p>
+<textarea rows="4" style="width:100%;background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:12px;border-radius:8px;font-size:12px" onclick="this.select()">${sessionToken}</textarea>
+<br><br>
+<a href="${deepLink}" style="color:#6366f1">Open in app (fain://)</a>
+</body></html>`);
   } catch (error) {
     console.error("[auth] Google OAuth callback failed:", error);
     res.status(500).json({ error: "Google authentication failed" });
