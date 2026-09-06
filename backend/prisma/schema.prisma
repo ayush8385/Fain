@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  gmailRefreshToken String? // encrypted at rest (app-level encryption, not plaintext)
+  gmailWatchExpiry  DateTime? // Pub/Sub watch renewal tracking
+  createdAt         DateTime  @default(now())
+
+  transactions   Transaction[]
+  categories     Category[]
+  merchantRules  MerchantCategoryRule[]
+  ingestedEmails IngestedEmail[]
+  deviceTokens   DeviceToken[]
+}
+
+// Staging table for Phase 1 ingestion: records which Gmail messages have been
+// fetched and looked at, before Phase 2's parser turns any of them into a
+// Transaction. Keeps dedup/ingestion state separate from parsed financial data.
+model IngestedEmail {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  gmailMessageId String
+  subject       String
+  fromAddress   String
+  receivedAt    DateTime
+  status        String // "pending_parse" | "parsed" | "unparseable"
+  fetchedAt     DateTime @default(now())
+
+  @@unique([userId, gmailMessageId])
+}
+
+model Transaction {
+  id        String @id @default(uuid())
+  userId    String
+  user      User   @relation(fields: [userId], references: [id])
+
+  amount    Decimal
+  currency  String  @default("INR")
+  direction String // "debit" | "credit"
+
+  merchantRaw        String // as extracted, unnormalized
+  merchantNormalized String // lowercased/trimmed, used for rule matching
+
+  transactionDate DateTime
+  accountLast4    String?
+
+  sourceType       String // "email" (future: "aggregator")
+  sourceRef        String // Gmail message ID — NOT raw email body
+  extractionMethod String // "rule" | "llm"
+
+  categoryId         String?
+  category           Category? @relation(fields: [categoryId], references: [id])
+  categoryConfidence Float?
+
+  status String // "auto_categorized" | "needs_review" | "confirmed"
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, sourceRef])
+}
+
+model Category {
+  id     String  @id @default(uuid())
+  userId String? // null = global default category
+  user   User?   @relation(fields: [userId], references: [id])
+  name   String
+  icon   String?
+
+  transactions Transaction[]
+  rules        MerchantCategoryRule[]
+}
+
+// Global (not per-user), keyed by exact sender address — a bank's email format
+// is identical for every user who banks there. Populated from successful LLM
+// extractions so future emails from the same sender/format skip the LLM.
+model LearnedEmailPattern {
+  id             String   @id @default(uuid())
+  senderAddress  String // lowercased exact "From" address this was learned from
+  regex          String // RE2-compatible pattern, applied to email.bodyText
+  flags          String   @default("is")
+  groupOrder     Json // ordered field names matching capture groups
+  fixedCurrency  String? // set when the sender's format never varies currency
+  fixedDirection String? // set when direction isn't part of the regex
+  sampleSubject  String // audit only — never store body text
+  successCount   Int      @default(1)
+  failureCount   Int      @default(0)
+  disabled       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  lastUsedAt     DateTime @default(now())
+
+  @@unique([senderAddress, regex])
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  platform  String // "ios" | "android"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MerchantCategoryRule {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  merchantPattern String // normalized merchant string or pattern
+  categoryId      String
+  category        Category @relation(fields: [categoryId], references: [id])
+  confirmedCount  Int      @default(1)
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, merchantPattern])
+}

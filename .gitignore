@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Backend
+backend/node_modules/
+backend/dist/
+backend/.env
+backend/prisma/*.db
+
+# App
+app/ios/.xcode.env
+app/node_modules/
+app/ios/Pods/
+app/ios/build/
+app/android/build/
+app/android/.gradle/
+app/.expo/
+
+# Logs
+*.log
