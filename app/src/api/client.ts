@@ -1,7 +1,7 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export const API_BASE = "http://localhost:4000";
+export const API_BASE = "https://fain-8agn.onrender.com";
 
 export const apiClient = axios.create({ baseURL: API_BASE });
 
